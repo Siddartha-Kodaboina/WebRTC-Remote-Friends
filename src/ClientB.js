@@ -10,6 +10,7 @@ function ClientB() {
   const videoRefB = useRef(null);
 
   const connectToWebSocket = () => {
+    console.log("Connecting to WebSocket", signalingServerURL);
     const ws = new WebSocket(signalingServerURL);
 
     ws.onopen = () => {
@@ -25,12 +26,15 @@ function ClientB() {
       }
 
       if (message.type === "offer") {
-        await handleOffer(message.sdp, peerConnectionB, "B", ws);
+        console.log("SDP offer received: ", message.sdp);
+        await handleOffer(message.sdp, peerConnectionB, ws);
       } else if (message.type === "answer") {
+        console.log("SDP answer received: ", message.sdp);
         await peerConnectionB.setRemoteDescription(
           new RTCSessionDescription({ type: "answer", sdp: message.sdp })
         );
       } else if (message.type === "candidate") {
+        console.log("ICE candidate received: ", message.candidate);
         await peerConnectionB.addIceCandidate(new RTCIceCandidate({ candidate: message.candidate }));
       }
     };
@@ -38,18 +42,20 @@ function ClientB() {
     setWsB(ws);
   };
 
-  const handleOffer = async (sdp, peerConnection, client, ws) => {
+  const handleOffer = async (sdp, peerConnection, ws) => {
     const desc = new RTCSessionDescription({ type: "offer", sdp: sdp });
     await peerConnection.setRemoteDescription(desc);
 
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
+    console.log("SDP answer sent: ", answer.sdp);
 
     ws.send(JSON.stringify({ type: "answer", callID: "call_id_generated", sdp: answer.sdp }));
   };
 
   // Join the call pool
   const joinPool = async () => {
+    console.log("Joining call pool for Client B");
     await fetch(callMatchingURL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -59,23 +65,27 @@ function ClientB() {
 
   // Initialize the WebRTC connection
   const startCall = () => {
+    console.log("Starting call for Client B");
     const peerConnection = new RTCPeerConnection({
       iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
     });
 
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
+        console.log("ICE candidate sent: ", event.candidate.candidate);
         wsB.send(JSON.stringify({ type: "candidate", callID: "call_id_generated", candidate: event.candidate.candidate }));
       }
     };
 
     peerConnection.ontrack = (event) => {
+      console.log("Remote stream received from Client A: ", event.streams[0]);
       videoRefB.current.srcObject = event.streams[0];
     };
 
     navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((stream) => {
       stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
       videoRefB.current.srcObject = stream;
+      console.log("Local stream added for Client B");
     });
 
     setPeerConnectionB(peerConnection);
